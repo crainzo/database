@@ -98,3 +98,60 @@ drop view last_six_months_orders;
 DROP FUNCTION insert_items_of_order();
 
 
+
+
+
+
+
+
+
+
+-- logging table for storing before and after value
+create table logging_t_history (
+        id             serial,
+        tstamp         timestamp default now(),
+        schemaname     text,
+        tabname        text,
+        operation      text,
+        who            text default current_user,
+        new_val        json,
+        old_val        json
+);
+
+-- procedure for logging data
+create or replace function change_trigger() returns trigger as $$
+       begin
+         if TG_OP = 'INSERT'
+         then insert into logging_t_history (
+                tabname, schemaname, operation, new_val
+              ) values (
+                TG_RELNAME, TG_TABLE_SCHEMA, TG_OP, row_to_json(NEW)
+              );
+           return new;
+         elsif  TG_OP = 'UPDATE'
+         then
+           insert into logging_t_history (
+             tabname, schemaname, operation, new_val, old_val
+           )
+           values (TG_RELNAME, TG_TABLE_SCHEMA, TG_OP, row_to_json(NEW), row_to_json(OLD));
+           return new;
+         elsif TG_OP = 'DELETE'
+         then
+           insert into logging_t_history
+             (tabname, schemaname, operation, old_val)
+             values (
+               TG_RELNAME, TG_TABLE_SCHEMA, TG_OP, row_to_json(OLD)
+             );
+             return old;
+         end if;
+       end;
+$$ language 'plpgsql' security definer;
+
+create trigger t before insert or update or delete on Product
+        for each row execute procedure change_trigger();
+		
+select * from Product;
+update Product set product_name = 'raaz' where product_id=1;
+select * from logging_t_history;
+
+
